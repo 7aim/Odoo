@@ -1286,3 +1286,947 @@ Bu əsas biliklər, gələcəkdə daha mürəkkəb modullar yaratmaq və mövcud
    - Kanban görünüşü əlavə edin.
 3. Hər hansı bir mövcud Odoo modulunu (məsələn, "crm" və ya "sale") araşdırın və onun strukturunu öyrənin.
 4. Öz başınıza sadə bir modul yaradaraq, öyrəndiklərinizi tətbiq edin.
+
+## 4. Modellər və Sahələr
+
+Odoo-da inkişafın ən fundamental aspektlərindən biri modellər və sahələrdir. Bu bölümdə modellərin necə yaradılacağını, müxtəlif sahə tiplərini, əlaqəli sahələri və hesablanmış sahələri ətraflı şəkildə öyrənəcəyik. Bu biliklər, hər hansı bir Odoo tətbiqinin məlumat strukturunu düzgün dizayn etmək üçün əsasdır.
+
+### Modellərin yaradılması
+
+#### Model nədir?
+
+Odoo-da model, verilənlər bazasında cədvəl ilə təmsil olunan bir iş obyektidir. Texniki baxımdan, model Python sinfidir və `models.Model` sinfindən varislik alır. Hər model xüsusi bir biznes konsepsiyasını təmsil edir, məsələn, müştəri, məhsul, satış sifarişi və s.
+
+Modellərin əsas vəzifəsi məlumatların strukturunu təyin etmək, biznes məntiqini icra etmək və istifadəçi interfeysi ilə qarşılıqlı əlaqəni təmin etməkdir.
+
+#### Modelin təyin edilməsi
+
+Yeni bir model yaratmaq üçün `models.Model` sinfindən varislik alan Python sinfi yaratmalısınız:
+
+```python
+from odoo import models, fields, api
+
+class CourseModule(models.Model):
+    _name = 'course.module'
+    _description = 'Kurs Modulu'
+    
+    name = fields.Char(string='Adı', required=True)
+    description = fields.Text(string='Təsvir')
+```
+
+Bu nümunədə:
+- `_name`: Modelin texniki adıdır və verilənlər bazasında cədvəl adını təyin edir. Odoo, cədvəl adını `_name` dəyərindən yaradır, ancaq nöqtələri altxətlə əvəz edir (məsələn, `course.module` → `course_module`).
+- `_description`: Modelin insanlar tərəfindən oxuna bilən təsviridir və istifadəçi interfeysi və qeydlər üçün istifadə olunur.
+- `name` və `description`: Modelin sahələridir.
+
+#### Model atributları
+
+Modellər, onların davranışını və xüsusiyyətlərini təyin edən müxtəlif atributlara malikdir:
+
+1. **`_name`**: Modelin unikal texniki adı (məcburidir, yeni model yaradılanda).
+
+2. **`_inherit`**: Varislik üçün istifadə olunur. Mövcud modelin funksionallığını genişləndirmək üçün.
+   ```python
+   class ExtendedPartner(models.Model):
+       _inherit = 'res.partner'
+       
+       new_field = fields.Char(string='Yeni Sahə')
+   ```
+
+3. **`_inherits`**: Delegasiya varisliliyi üçün. Bir modelin xüsusiyyətlərini digərinə delegasiya edir.
+   ```python
+   class Employee(models.Model):
+       _name = 'hr.employee'
+       _inherits = {'res.partner': 'partner_id'}
+       
+       partner_id = fields.Many2one('res.partner', required=True, ondelete='cascade')
+   ```
+
+4. **`_description`**: İnsan tərəfindən oxuna bilən təsvir.
+
+5. **`_order`**: Standart sıralama meyarı.
+   ```python
+   _order = 'name, date desc'
+   ```
+
+6. **`_rec_name`**: Qeydin adını təmsil edən sahə (standart `name` sahəsidir).
+   ```python
+   _rec_name = 'code'  # 'name' əvəzinə 'code' sahəsi istifadə olunacaq
+   ```
+
+7. **`_table`**: Verilənlər bazasında cədvəl adı (standart olaraq `_name` əsasında yaradılır).
+   ```python
+   _table = 'custom_course_module'
+   ```
+
+8. **`_log_access`**: Avtomatik audit sahələrinin yaradılması (`create_date`, `write_date` və s.).
+   ```python
+   _log_access = False  # Audit sahələrini yaratma
+   ```
+
+9. **`_auto`**: `True` olduqda, Odoo avtomatik olaraq verilənlər bazasında cədvəl yaradır.
+   ```python
+   _auto = False  # Verilənlər bazasında cədvəl yaratma
+   ```
+
+10. **`_sql_constraints`**: SQL səviyyəsində məhdudiyyətlər.
+    ```python
+    _sql_constraints = [
+        ('name_uniq', 'unique (name)', 'Kurs adı unikal olmalıdır!')
+    ]
+    ```
+
+11. **`_constraints`**: Python səviyyəsində məhdudiyyətlər (Odoo 13+ versiyalarda `@api.constrains` ilə əvəz olunub).
+
+#### Model təsdiqləri (validasiyalar)
+
+Modellər üçün təsdiqlər, məlumatların doğruluğunu və tamlığını təmin etmək üçün istifadə olunur. İki əsas növ təsdiq var:
+
+1. **SQL məhdudiyyətləri**: Verilənlər bazası səviyyəsində tətbiq olunur və çox effektivdir.
+   ```python
+   _sql_constraints = [
+       ('code_uniq', 'unique (code)', 'Kod unikal olmalıdır!'),
+       ('check_price', 'CHECK(price >= 0)', 'Qiymət mənfi ola bilməz!')
+   ]
+   ```
+
+2. **Python məhdudiyyətləri**: Daha mürəkkəb məntiq üçün istifadə olunur.
+   ```python
+   @api.constrains('date_start', 'date_end')
+   def _check_dates(self):
+       for record in self:
+           if record.date_start and record.date_end and record.date_start > record.date_end:
+               raise models.ValidationError('Başlama tarixi bitmə tarixindən sonra ola bilməz!')
+   ```
+
+#### Nümunə: Tam model təyin edilməsi
+
+Bir kurs modulu idarəetmə sistemi üçün tam bir model təyin edək:
+
+```python
+from odoo import models, fields, api
+from odoo.exceptions import ValidationError
+from datetime import timedelta
+
+class Course(models.Model):
+    _name = 'training.course'
+    _description = 'Təlim Kursu'
+    _order = 'sequence, name'
+    
+    name = fields.Char(string='Kursun Adı', required=True, index=True)
+    code = fields.Char(string='Kod', required=True, index=True)
+    description = fields.Text(string='Təsvir')
+    sequence = fields.Integer(string='Ardıcıllıq', default=10)
+    duration = fields.Float(string='Müddət (Saat)', default=1.0)
+    price = fields.Float(string='Qiymət', digits=(10, 2))
+    max_participants = fields.Integer(string='Maksimum İştirakçı Sayı')
+    date_start = fields.Date(string='Başlama Tarixi')
+    date_end = fields.Date(string='Bitmə Tarixi')
+    active = fields.Boolean(string='Aktiv', default=True)
+    state = fields.Selection([
+        ('draft', 'Qaralama'),
+        ('confirmed', 'Təsdiqlənmiş'),
+        ('done', 'Tamamlanmış'),
+        ('cancelled', 'Ləğv Edilmiş'),
+    ], string='Status', default='draft')
+    color = fields.Integer(string='Rəng İndeksi')
+    tags_ids = fields.Many2many('training.tag', string='Etiketlər')
+    instructor_id = fields.Many2one('res.partner', string='Təlimçi')
+    
+    _sql_constraints = [
+        ('code_uniq', 'unique (code)', 'Kurs kodu unikal olmalıdır!'),
+        ('check_price', 'CHECK(price >= 0)', 'Qiymət mənfi ola bilməz!'),
+    ]
+    
+    @api.constrains('date_start', 'date_end')
+    def _check_dates(self):
+        for course in self:
+            if course.date_start and course.date_end and course.date_start > course.date_end:
+                raise ValidationError('Başlama tarixi bitmə tarixindən sonra ola bilməz!')
+    
+    @api.onchange('date_start', 'duration')
+    def _onchange_date_start(self):
+        if self.date_start and self.duration:
+            hours = int(self.duration)
+            days = hours // 8
+            if days == 0:
+                days = 1
+            self.date_end = self.date_start + timedelta(days=days)
+    
+    def action_confirm(self):
+        self.state = 'confirmed'
+    
+    def action_done(self):
+        self.state = 'done'
+    
+    def action_draft(self):
+        self.state = 'draft'
+    
+    def action_cancel(self):
+        self.state = 'cancelled'
+```
+
+### Sahə növləri
+
+Odoo-da müxtəlif növ sahələr mövcuddur və hər biri müxtəlif məlumat tipləri üçün istifadə olunur. Bu bölümdə, əsas sahə növlərini və onların xüsusiyyətlərini nəzərdən keçirəcəyik.
+
+#### Əsas sahə növləri
+
+1. **Char**: Qısa mətn sahəsi.
+   ```python
+   name = fields.Char(string='Adı', required=True, size=64, translate=True)
+   ```
+   - `size`: Maksimum simvol sayı (məhdudiyyət qoymaq istəyirsinizsə).
+   - `translate`: `True` olduqda, bu sahə tərcümə edilə bilər.
+
+2. **Text**: Uzun mətn sahəsi.
+   ```python
+   description = fields.Text(string='Təsvir', translate=True)
+   ```
+
+3. **Html**: HTML formatında mətn.
+   ```python
+   content = fields.Html(string='Məzmun', sanitize=True)
+   ```
+   - `sanitize`: `True` olduqda, təhlükəsizlik üçün HTML təmizlənir.
+
+4. **Boolean**: Doğru/yanlış dəyəri.
+   ```python
+   active = fields.Boolean(string='Aktiv', default=True)
+   ```
+
+5. **Integer**: Tam ədəd.
+   ```python
+   sequence = fields.Integer(string='Ardıcıllıq', default=10)
+   ```
+
+6. **Float**: Kəsr ədəd.
+   ```python
+   price = fields.Float(string='Qiymət', digits=(10, 2))
+   ```
+   - `digits`: Ümumi rəqəm sayı və onluq hissədəki rəqəm sayı.
+
+7. **Monetary**: Pul vahidi.
+   ```python
+   salary = fields.Monetary(string='Maaş', currency_field='currency_id')
+   currency_id = fields.Many2one('res.currency', string='Valyuta')
+   ```
+   - `currency_field`: Valyuta sahəsinin adı.
+
+8. **Date**: Tarix.
+   ```python
+   birth_date = fields.Date(string='Doğum Tarixi')
+   ```
+
+9. **Datetime**: Tarix və saat.
+   ```python
+   registration_datetime = fields.Datetime(string='Qeydiyyat Tarixi və Saatı', default=fields.Datetime.now)
+   ```
+
+10. **Binary**: İkili məlumat (məsələn, fayl).
+    ```python
+    attachment = fields.Binary(string='Əlavə')
+    ```
+
+11. **Selection**: Seçim siyahısı.
+    ```python
+    state = fields.Selection([
+        ('draft', 'Qaralama'),
+        ('confirmed', 'Təsdiqlənmiş'),
+        ('done', 'Tamamlanmış'),
+        ('cancelled', 'Ləğv Edilmiş'),
+    ], string='Status', default='draft')
+    ```
+    - Birinci element texniki dəyərdir, ikinci element istifadəçiyə göstərilən etiketdir.
+
+12. **Reference**: Fərqli modellərə dinamik əlaqə.
+    ```python
+    reference = fields.Reference(selection=[
+        ('res.partner', 'Partner'),
+        ('product.product', 'Məhsul'),
+    ], string='İstinad')
+    ```
+
+#### Sahə parametrləri
+
+Bütün sahə növləri üçün ümumi parametrlər:
+
+1. **`string`**: İstifadəçi interfeysi üçün etiket.
+   ```python
+   name = fields.Char(string='Müştərinin Adı')
+   ```
+
+2. **`required`**: Sahə məcburidirmi?
+   ```python
+   name = fields.Char(string='Adı', required=True)
+   ```
+
+3. **`readonly`**: Sahə yalnız oxuna bilərmi?
+   ```python
+   code = fields.Char(string='Kod', readonly=True)
+   ```
+
+4. **`default`**: Standart dəyər.
+   ```python
+   active = fields.Boolean(string='Aktiv', default=True)
+   ```
+   - Funksiya da istifadə edə bilərsiniz:
+   ```python
+   date = fields.Date(string='Tarix', default=fields.Date.today)
+   ```
+
+5. **`index`**: Verilənlər bazasında indeks yaradılsınmı?
+   ```python
+   name = fields.Char(string='Adı', index=True)
+   ```
+
+6. **`copy`**: Qeyd kopyalandıqda bu sahə də kopyalansınmı?
+   ```python
+   reference = fields.Char(string='İstinad', copy=False)
+   ```
+
+7. **`groups`**: Hansı istifadəçi qrupları bu sahəni görə və/və ya dəyişə bilər.
+   ```python
+   salary = fields.Float(string='Maaş', groups='hr.group_hr_manager')
+   ```
+
+8. **`states`**: Vəziyyətə əsaslanan xüsusiyyətlər (məsələn, `readonly`).
+   ```python
+   description = fields.Text(string='Təsvir', states={
+       'confirmed': [('readonly', True)],
+       'done': [('readonly', True)],
+   })
+   ```
+
+9. **`help`**: Kömək mətni (tooltip).
+   ```python
+   max_participants = fields.Integer(string='Maksimum İştirakçı Sayı', 
+                                   help='Kursa qəbul ediləcək maksimum iştirakçı sayı')
+   ```
+
+10. **`company_dependent`**: Şirkətə bağlı dəyər (multi-company mühitində).
+    ```python
+    property_account_id = fields.Many2one('account.account', string='Hesab', 
+                                        company_dependent=True)
+    ```
+
+### Əlaqəli sahələr
+
+Odoo-da əlaqəli sahələr, müxtəlif modellər arasında əlaqələri təyin etmək üçün istifadə olunur. Əlaqəli sahələr, verilənlər bazasında əlaqələri (references) təmsil edir və relasiya modelində "foreign key" konsepsiyasına bənzərdir.
+
+#### Many2one sahəsi
+
+`Many2one` sahəsi, cari qeydin başqa bir modelin bir qeydinə əlaqəsini göstərir. Məsələn, bir sifariş bir müştəriyə aid ola bilər.
+
+```python
+customer_id = fields.Many2one('res.partner', string='Müştəri', required=True)
+```
+
+Bu sahə aşağıdakı parametrləri qəbul edir:
+- `comodel_name`: Əlaqəli modelin adı ('res.partner').
+- `ondelete`: Əlaqəli qeyd silindikdə nə baş verəcəyini təyin edir ('cascade', 'restrict', 'set null').
+- `domain`: Əlaqəli modeldəki qeydləri süzmək üçün domen.
+- `context`: Əlaqəli modeli açarkən keçirilən kontekst.
+- `auto_join`: SQL sorğularda avtomatik birləşmələr üçün.
+
+Nümunə:
+```python
+category_id = fields.Many2one('product.category', string='Kateqoriya', 
+                           required=True, ondelete='restrict',
+                           domain=[('active', '=', True)],
+                           context={'default_active': True})
+```
+
+#### One2many sahəsi
+
+`One2many` sahəsi, əlaqəli modeldəki qeydlərin siyahısını göstərir, hansı ki cari qeydə `Many2one` sahəsi ilə əlaqəlidir. Məsələn, bir müştərinin bir neçə sifarişi ola bilər.
+
+```python
+order_ids = fields.One2many('sale.order', 'customer_id', string='Sifarişlər')
+```
+
+Bu sahə aşağıdakı parametrləri qəbul edir:
+- `comodel_name`: Əlaqəli modelin adı ('sale.order').
+- `inverse_name`: Əlaqəli modeldə cari modelə geri əlaqə yaradan `Many2one` sahəsinin adı ('customer_id').
+- `domain`: Əlaqəli qeydləri süzmək üçün domen.
+- `context`: Əlaqəli qeydləri yaradarkən və ya redaktə edərkən keçirilən kontekst.
+
+Nümunə:
+```python
+line_ids = fields.One2many('sale.order.line', 'order_id', string='Sifariş Xətləri',
+                        domain=[('state', '!=', 'cancel')],
+                        context={'default_state': 'draft'})
+```
+
+#### Many2many sahəsi
+
+`Many2many` sahəsi, cari modelin qeydləri ilə başqa bir modelin qeydləri arasında çoxdan-çoxa əlaqəni təmsil edir. Məsələn, bir məhsul bir neçə etiketə aid ola bilər və bir etiket bir neçə məhsula aid ola bilər.
+
+```python
+tag_ids = fields.Many2many('product.tag', string='Etiketlər')
+```
+
+Bu sahə aşağıdakı parametrləri qəbul edir:
+- `comodel_name`: Əlaqəli modelin adı ('product.tag').
+- `relation`: Münasibət cədvəlinin adı (standart olaraq yaradılır, lakin dəqiqləşdirilə bilər).
+- `column1`: Cari modelin ID-sini saxlayan münasibət cədvəlindəki sütun.
+- `column2`: Əlaqəli modelin ID-sini saxlayan münasibət cədvəlindəki sütun.
+- `domain`: Əlaqəli qeydləri süzmək üçün domen.
+- `context`: Əlaqəli qeydləri yaradarkən və ya redaktə edərkən keçirilən kontekst.
+
+Nümunə:
+```python
+category_ids = fields.Many2many(
+    'product.category',
+    'product_category_rel',
+    'product_id',
+    'category_id',
+    string='Kateqoriyalar',
+    domain=[('active', '=', True)]
+)
+```
+
+#### Reference sahəsi
+
+`Reference` sahəsi, fərqli modellərə dinamik əlaqələrə imkan verir. Bu, cari qeydin eyni sahədən müxtəlif modellərə əlaqəli olmasına imkan verir.
+
+```python
+resource = fields.Reference(selection=[
+    ('res.partner', 'Partner'),
+    ('product.product', 'Məhsul'),
+], string='Resurs')
+```
+
+Bu sahə aşağıdakı parametrləri qəbul edir:
+- `selection`: Mümkün modellərin siyahısı.
+- `selection_add`: Mövcud seçimə əlavə etmək üçün (varislikdə istifadə olunur).
+
+#### Əlaqəli sahələrlə işləmək
+
+Əlaqəli sahələrdən dəyərləri oxumaq və yazmaq:
+
+```python
+# Many2one oxuma
+partner_name = record.partner_id.name
+# Many2one yazma
+record.partner_id = self.env['res.partner'].browse(1)  # ID ilə
+record.partner_id = partner_record  # Qeyd obyekti ilə
+
+# One2many oxuma
+for line in record.line_ids:
+    print(line.name)
+# One2many yazma
+line_vals = {'name': 'Yeni xətt', 'price': 100.0}
+record.line_ids = [(0, 0, line_vals)]  # Yeni xətt əlavə et
+record.line_ids = [(1, line_id, {'price': 200.0})]  # Mövcud xətti yenilə
+record.line_ids = [(2, line_id, 0)]  # Xətti sil
+record.line_ids = [(5, 0, 0)]  # Bütün xətləri sil
+record.line_ids = [(6, 0, [1, 2, 3])]  # Xətləri ID-lər ilə əvəz et
+
+# Many2many oxuma
+for tag in record.tag_ids:
+    print(tag.name)
+# Many2many yazma (One2many ilə eyni formada)
+record.tag_ids = [(4, tag_id, 0)]  # Tag əlavə et
+record.tag_ids = [(3, tag_id, 0)]  # Tag sil
+record.tag_ids = [(6, 0, [1, 2, 3])]  # Tag-ları ID-lər ilə əvəz et
+```
+
+### Hesablanmış sahələr və metodlar
+
+Hesablanmış sahələr, başqa sahələrə əsasən dinamik şəkildə hesablanan sahələrdir. Bu, məlumatların təkrarlanmasını azaldır və həmişə ən son hesablanmış dəyərlərin olmasını təmin edir.
+
+#### Hesablanmış sahələr
+
+Hesablanmış sahəni təyin etmək üçün `compute` parametrindən istifadə olunur:
+
+```python
+total_amount = fields.Float(string='Ümumi Məbləğ', compute='_compute_total_amount')
+
+@api.depends('line_ids.price', 'line_ids.quantity')
+def _compute_total_amount(self):
+    for record in self:
+        record.total_amount = sum(line.price * line.quantity for line in record.line_ids)
+```
+
+Burada:
+- `compute`: Hesablama metodunun adı.
+- `@api.depends`: Hansı sahələrin dəyişməsi ilə hesablamanın yenidən işə salınacağını göstərir.
+
+Hesablanmış sahələr üçün əlavə parametrlər:
+- `store`: `True` olduqda, hesablanmış dəyər verilənlər bazasında saxlanılır.
+- `readonly`: Standart olaraq `True`-dur, amma `inverse` təyin edildikdə `False` ola bilər.
+- `inverse`: Sahə dəyişdirildikdə çağırılacaq metod (oxunulabilən hesablanmış sahələr üçün).
+- `search`: Sahə üzrə axtarış edilərkən çağırılacaq metod.
+
+Nümunə:
+```python
+full_name = fields.Char(string='Tam Ad', compute='_compute_full_name', 
+                      store=True, readonly=False, inverse='_inverse_full_name')
+
+@api.depends('first_name', 'last_name')
+def _compute_full_name(self):
+    for record in self:
+        if record.first_name or record.last_name:
+            record.full_name = (record.first_name or '') + ' ' + (record.last_name or '')
+        else:
+            record.full_name = ''
+
+def _inverse_full_name(self):
+    for record in self:
+        parts = record.full_name.split(' ', 1)
+        record.first_name = parts[0] if parts else ''
+        record.last_name = parts[1] if len(parts) > 1 else ''
+```
+
+#### Əlaqəli hesablanmış sahələr
+
+Odoo, əlaqəli qeydlərdəki sahələrə əsasən hesablanmış sahələri dəstəkləyir:
+
+```python
+partner_credit = fields.Float(string='Kredit', related='partner_id.credit', store=True)
+```
+
+Burada:
+- `related`: Əlaqəli qeydin sahə yolunu göstərir.
+- `store`: `True` olduqda, əlaqəli dəyər verilənlər bazasında saxlanılır.
+
+Əlaqəli sahələr daha dərin əlaqələrə də dəstək verir:
+```python
+country_name = fields.Char(string='Ölkə', related='partner_id.country_id.name')
+```
+
+#### Metodlar
+
+Odoo-da modellər üçün müxtəlif növ metodlar mövcuddur:
+
+1. **API metodları**:
+   - `@api.model`: Tək qeydə bağlı olmayan metodlar üçün.
+   ```python
+   @api.model
+   def get_default_currency(self):
+       return self.env.company.currency_id
+   ```
+   
+   - `@api.multi` (Odoo 13+ versiyalarda default): Bir və ya bir neçə qeyd üçün çağırıla bilən metodlar.
+   ```python
+   def action_confirm(self):
+       for record in self:
+           record.state = 'confirmed'
+       return True
+   ```
+
+2. **CRUD metodları**: Create, Read, Update, Delete funksiyalarını təyin edən metodlar.
+   - `create`: Yeni qeydlər yaratmaq üçün.
+   ```python
+   @api.model
+   def create(self, vals):
+       if 'code' not in vals:
+           vals['code'] = self.env['ir.sequence'].next_by_code('my.model')
+       return super(MyModel, self).create(vals)
+   ```
+   
+   - `write`: Mövcud qeydləri yeniləmək üçün.
+   ```python
+   def write(self, vals):
+       if 'state' in vals and vals['state'] == 'done':
+           vals['completion_date'] = fields.Date.today()
+       return super(MyModel, self).write(vals)
+   ```
+   
+   - `unlink`: Qeydləri silmək üçün.
+   ```python
+   def unlink(self):
+       for record in self:
+           if record.state == 'done':
+               raise UserError('Tamamlanmış qeydlər silinə bilməz!')
+       return super(MyModel, self).unlink()
+   ```
+   
+   - `copy`: Qeydləri kopyalamaq üçün.
+   ```python
+   def copy(self, default=None):
+       default = dict(default or {})
+       default.update({'state': 'draft', 'name': _('%s (copy)') % self.name})
+       return super(MyModel, self).copy(default)
+   ```
+
+3. **Hadisə işləyiciləri**:
+   - `@api.onchange`: İstifadəçi interfeysi dəyişikliklərini idarə etmək üçün.
+   ```python
+   @api.onchange('product_id')
+   def _onchange_product_id(self):
+       if self.product_id:
+           self.price_unit = self.product_id.list_price
+           self.name = self.product_id.name
+   ```
+   
+   - `@api.constrains`: Qeydlərin doğruluğunu yoxlamaq üçün.
+   ```python
+   @api.constrains('date_start', 'date_end')
+   def _check_dates(self):
+       for record in self:
+           if record.date_start and record.date_end and record.date_start > record.date_end:
+               raise ValidationError('Başlama tarixi bitmə tarixindən sonra ola bilməz!')
+   ```
+   
+   - `@api.depends`: Hesablanmış sahələrin asılılıqlarını təyin etmək üçün.
+   ```python
+   @api.depends('line_ids.price_subtotal')
+   def _compute_amount(self):
+       for order in self:
+           order.amount_total = sum(line.price_subtotal for line in order.line_ids)
+   ```
+
+4. **ORM metodları**:
+   - `search`: Qeydləri axtarmaq üçün.
+   ```python
+   partners = self.env['res.partner'].search([('customer_rank', '>', 0), ('active', '=', True)])
+   ```
+   
+   - `browse`: ID ilə qeydləri əldə etmək üçün.
+   ```python
+   partner = self.env['res.partner'].browse(1)
+   ```
+   
+   - `filtered`, `mapped`, `sorted`: Qeyd dəstini manipulyasiya etmək üçün.
+   ```python
+   active_partners = partners.filtered(lambda p: p.active)
+   partner_names = partners.mapped('name')
+   sorted_partners = partners.sorted(lambda p: p.name)
+   ```
+
+### Praktiki nümunə: Təhsil İdarəetmə Sistemi
+
+İndi öyrəndiyimiz konsepsiyaları tətbiq edərək, sadə bir təhsil idarəetmə sistemi yaradaq. Bu sistem kursları, tələbələri və qeydiyyatları idarə edəcək.
+
+#### Kurs modeli
+
+```python
+from odoo import models, fields, api
+from odoo.exceptions import ValidationError
+
+class Course(models.Model):
+    _name = 'education.course'
+    _description = 'Kurs'
+    _order = 'sequence, name'
+    
+    name = fields.Char(string='Kursun Adı', required=True, index=True)
+    code = fields.Char(string='Kod', required=True, index=True)
+    description = fields.Text(string='Təsvir')
+    sequence = fields.Integer(string='Ardıcıllıq', default=10)
+    duration = fields.Float(string='Müddət (Saat)', default=1.0)
+    price = fields.Float(string='Qiymət', digits=(10, 2))
+    max_participants = fields.Integer(string='Maksimum İştirakçı Sayı')
+    instructor_id = fields.Many2one('res.partner', string='Təlimçi', 
+                                  domain=[('instructor', '=', True)])
+    category_id = fields.Many2one('education.course.category', string='Kateqoriya')
+    tag_ids = fields.Many2many('education.tag', string='Etiketlər')
+    session_ids = fields.One2many('education.session', 'course_id', string='Sessiyalar')
+    session_count = fields.Integer(string='Sessiya Sayı', compute='_compute_session_count')
+    participant_ids = fields.Many2many('education.student', string='İştirakçılar',
+                                    compute='_compute_participants')
+    participant_count = fields.Integer(string='İştirakçı Sayı', 
+                                     compute='_compute_participant_count')
+    active = fields.Boolean(string='Aktiv', default=True)
+    state = fields.Selection([
+        ('draft', 'Qaralama'),
+        ('open', 'Açıq'),
+        ('closed', 'Bağlı'),
+    ], string='Status', default='draft')
+    color = fields.Integer(string='Rəng')
+    
+    _sql_constraints = [
+        ('code_uniq', 'unique (code)', 'Kurs kodu unikal olmalıdır!'),
+        ('check_price', 'CHECK(price >= 0)', 'Qiymət mənfi ola bilməz!'),
+    ]
+    
+    @api.depends('session_ids')
+    def _compute_session_count(self):
+        for course in self:
+            course.session_count = len(course.session_ids)
+    
+    @api.depends('session_ids.registration_ids.student_id')
+    def _compute_participants(self):
+        for course in self:
+            students = course.session_ids.mapped('registration_ids.student_id')
+            course.participant_ids = students
+    
+    @api.depends('participant_ids')
+    def _compute_participant_count(self):
+        for course in self:
+            course.participant_count = len(course.participant_ids)
+    
+    @api.constrains('max_participants')
+    def _check_max_participants(self):
+        for course in self:
+            if course.max_participants and course.max_participants < 0:
+                raise ValidationError('Maksimum iştirakçı sayı mənfi ola bilməz!')
+    
+    def action_open(self):
+        self.state = 'open'
+    
+    def action_close(self):
+        self.state = 'closed'
+    
+    def action_draft(self):
+        self.state = 'draft'
+    
+    def action_view_sessions(self):
+        return {
+            'name': 'Sessiyalar',
+            'type': 'ir.actions.act_window',
+            'res_model': 'education.session',
+            'view_mode': 'tree,form',
+            'domain': [('course_id', '=', self.id)],
+        }
+    
+    def action_view_participants(self):
+        return {
+            'name': 'İştirakçılar',
+            'type': 'ir.actions.act_window',
+            'res_model': 'education.student',
+            'view_mode': 'tree,form',
+            'domain': [('id', 'in', self.participant_ids.ids)],
+        }
+```
+
+#### Sessiya modeli
+
+```python
+from odoo import models, fields, api
+from odoo.exceptions import ValidationError
+from datetime import timedelta
+
+class Session(models.Model):
+    _name = 'education.session'
+    _description = 'Təlim Sessiyası'
+    
+    name = fields.Char(string='Adı', required=True, compute='_compute_name', store=True)
+    course_id = fields.Many2one('education.course', string='Kurs', required=True, 
+                              ondelete='cascade')
+    start_date = fields.Date(string='Başlama Tarixi', required=True, default=fields.Date.today)
+    end_date = fields.Date(string='Bitmə Tarixi', compute='_compute_end_date', store=True)
+    duration = fields.Float(string='Müddət (Gün)', default=1.0)
+    instructor_id = fields.Many2one('res.partner', string='Təlimçi', 
+                                  related='course_id.instructor_id', store=True)
+    location = fields.Char(string='Məkan')
+    registration_ids = fields.One2many('education.registration', 'session_id', 
+                                     string='Qeydiyyatlar')
+    attendee_count = fields.Integer(string='İştirakçı Sayı', 
+                                  compute='_compute_attendee_count')
+    max_participants = fields.Integer(string='Maksimum İştirakçı Sayı', 
+                                    related='course_id.max_participants')
+    taken_seats_percentage = fields.Float(string='Doluluk Faizi (%)', 
+                                        compute='_compute_taken_seats')
+    active = fields.Boolean(string='Aktiv', default=True)
+    state = fields.Selection([
+        ('draft', 'Qaralama'),
+        ('confirmed', 'Təsdiqlənmiş'),
+        ('done', 'Tamamlanmış'),
+        ('cancelled', 'Ləğv Edilmiş'),
+    ], string='Status', default='draft')
+    color = fields.Integer(string='Rəng')
+    
+    @api.depends('course_id', 'start_date')
+    def _compute_name(self):
+        for session in self:
+            if session.course_id and session.start_date:
+                session.name = f"{session.course_id.name} ({session.start_date})"
+            elif session.course_id:
+                session.name = session.course_id.name
+            else:
+                session.name = "Yeni Sessiya"
+    
+    @api.depends('start_date', 'duration')
+    def _compute_end_date(self):
+        for session in self:
+            if session.start_date and session.duration:
+                duration = int(session.duration)
+                if duration < 1:
+                    duration = 1
+                session.end_date = session.start_date + timedelta(days=duration - 1)
+            else:
+                session.end_date = session.start_date
+    
+    @api.depends('registration_ids')
+    def _compute_attendee_count(self):
+        for session in self:
+            session.attendee_count = len(session.registration_ids)
+    
+    @api.depends('registration_ids', 'max_participants')
+    def _compute_taken_seats(self):
+        for session in self:
+            if not session.max_participants:
+                session.taken_seats_percentage = 0.0
+            else:
+                session.taken_seats_percentage = (session.attendee_count / session.max_participants) * 100
+    
+    @api.onchange('max_participants', 'registration_ids')
+    def _verify_valid_seats(self):
+        if self.max_participants and self.attendee_count > self.max_participants:
+            return {
+                'warning': {
+                    'title': "Çox iştirakçı",
+                    'message': "İştirakçı sayı maksimum iştirakçı sayını aşır!",
+                }
+            }
+    
+    @api.constrains('instructor_id', 'registration_ids')
+    def _check_instructor_not_in_attendees(self):
+        for session in self:
+            students = session.registration_ids.mapped('student_id.partner_id')
+            if session.instructor_id and session.instructor_id in students:
+                raise ValidationError("Təlimçi öz sessiyasında iştirakçı ola bilməz!")
+    
+    def action_confirm(self):
+        self.state = 'confirmed'
+    
+    def action_done(self):
+        self.state = 'done'
+    
+    def action_cancel(self):
+        self.state = 'cancelled'
+    
+    def action_draft(self):
+        self.state = 'draft'
+```
+
+#### Tələbə modeli
+
+```python
+from odoo import models, fields, api
+
+class Student(models.Model):
+    _name = 'education.student'
+    _description = 'Tələbə'
+    _inherit = ['mail.thread', 'mail.activity.mixin']
+    
+    name = fields.Char(string='Adı', required=True, tracking=True)
+    partner_id = fields.Many2one('res.partner', string='Əlaqəli Partner', 
+                              required=True, ondelete='cascade')
+    email = fields.Char(string='E-poçt', related='partner_id.email', readonly=False)
+    phone = fields.Char(string='Telefon', related='partner_id.phone', readonly=False)
+    birth_date = fields.Date(string='Doğum Tarixi')
+    registration_ids = fields.One2many('education.registration', 'student_id', 
+                                     string='Qeydiyyatlar')
+    course_count = fields.Integer(string='Kurs Sayı', compute='_compute_course_count')
+    session_ids = fields.Many2many('education.session', string='Sessiyalar',
+                                compute='_compute_sessions', store=True)
+    active = fields.Boolean(string='Aktiv', default=True)
+    image = fields.Binary(string='Şəkil', related='partner_id.image_1920')
+    
+    @api.depends('registration_ids.session_id.course_id')
+    def _compute_course_count(self):
+        for student in self:
+            courses = student.registration_ids.mapped('session_id.course_id')
+            student.course_count = len(courses)
+    
+    @api.depends('registration_ids.session_id')
+    def _compute_sessions(self):
+        for student in self:
+            student.session_ids = student.registration_ids.mapped('session_id')
+    
+    @api.model
+    def create(self, vals):
+        if not vals.get('partner_id'):
+            partner = self.env['res.partner'].create({
+                'name': vals.get('name'),
+                'email': vals.get('email'),
+                'phone': vals.get('phone'),
+                'company_type': 'person',
+            })
+            vals['partner_id'] = partner.id
+        return super(Student, self).create(vals)
+    
+    def action_view_courses(self):
+        courses = self.registration_ids.mapped('session_id.course_id')
+        return {
+            'name': 'Kurslar',
+            'type': 'ir.actions.act_window',
+            'res_model': 'education.course',
+            'view_mode': 'tree,form',
+            'domain': [('id', 'in', courses.ids)],
+        }
+```
+
+#### Qeydiyyat modeli
+
+```python
+from odoo import models, fields, api
+from odoo.exceptions import ValidationError
+
+class Registration(models.Model):
+    _name = 'education.registration'
+    _description = 'Kurs Qeydiyyatı'
+    _rec_name = 'session_id'
+    
+    session_id = fields.Many2one('education.session', string='Sessiya', required=True,
+                               ondelete='cascade')
+    course_id = fields.Many2one('education.course', string='Kurs', 
+                             related='session_id.course_id', store=True)
+    student_id = fields.Many2one('education.student', string='Tələbə', required=True,
+                               ondelete='cascade')
+    registration_date = fields.Date(string='Qeydiyyat Tarixi', default=fields.Date.today)
+    state = fields.Selection([
+        ('draft', 'Qaralama'),
+        ('confirmed', 'Təsdiqlənmiş'),
+        ('attended', 'İştirak Etdi'),
+        ('cancelled', 'Ləğv Edilmiş'),
+    ], string='Status', default='draft')
+    attendance = fields.Float(string='İştirak (%)', default=0.0)
+    feedback = fields.Text(string='Rəy')
+    
+    _sql_constraints = [
+        ('unique_registration', 'unique(session_id, student_id)', 
+         'Tələbə artıq bu sessiyaya qeydiyyatdan keçib!'),
+    ]
+    
+    @api.constrains('attendance')
+    def _check_attendance(self):
+        for registration in self:
+            if registration.attendance < 0 or registration.attendance > 100:
+                raise ValidationError('İştirak faizi 0 ilə 100 arasında olmalıdır!')
+    
+    @api.onchange('session_id')
+    def _onchange_session(self):
+        if self.session_id and self.session_id.attendee_count >= self.session_id.max_participants:
+            return {
+                'warning': {
+                    'title': "Sessiya Doludur",
+                    'message': "Bu sessiya artıq maksimum iştirakçı sayına çatıb!",
+                }
+            }
+    
+    def action_confirm(self):
+        self.state = 'confirmed'
+    
+    def action_attend(self):
+        self.state = 'attended'
+    
+    def action_cancel(self):
+        self.state = 'cancelled'
+    
+    def action_draft(self):
+        self.state = 'draft'
+```
+
+### Nəticə
+
+Bu bölümdə Odoo-da modellər və sahələr haqqında ətraflı məlumat əldə etdik. Modellərin yaradılması, müxtəlif sahə növləri, əlaqəli sahələr və hesablanmış sahələr haqqında öyrəndik. Eyni zamanda, praktiki bir nümunə vasitəsilə öyrəndiklərimizi tətbiq etdik.
+
+Modellər və sahələr, Odoo inkişafının əsasını təşkil edir və hər bir Odoo tətbiqinin məlumat strukturunu müəyyən edir. Bu konsepsiyaları yaxşı anlamaq, uğurlu Odoo modulları yaratmaq üçün vacibdir.
+
+Növbəti bölümdə, istifadəçi interfeysi elementlərindən olan görünüşləri (views) araşdıracağıq və istifadəçilərin məlumatlarla necə qarşılıqlı əlaqədə olduğunu öyrənəcəyik.
+
+---
+
+**Praktiki tapşırıq:**
+
+1. Bu bölümdə yaratdığımız Təhsil İdarəetmə Sistemi modellərinə əsaslanaraq tam bir modul yaradın.
+2. Aşağıdakı əlavə funksionallıqları əlavə edin:
+   - Kurs materialları üçün model yaradın (`Binary` sahələrdən istifadə edərək).
+   - Tələbə imtahan nəticələrini izləmək üçün model yaradın.
+   - Kurslara qiymətləndirmə sistemi əlavə edin.
+3. Hesablanmış sahələrdən istifadə edərək, tələbənin ümumi performansını hesablayan funksionallıq əlavə edin.
+4. Məhdudiyyətlər əlavə edərək, məlumatların doğruluğunu və tamlığını təmin edin.
